@@ -1,0 +1,21 @@
+name: DurumiBridge
+version: '1.0.0'
+main: com.durumi.bridge.DurumiBridge
+api-version: '1.21'
+description: Bridge plugin between DurumiTown Minecraft server and community website
+author: DurumiTown
+website: https://durumitown.kr
+depend:
+  - ProtocolLib
+commands:
+  durumi:
+    description: DurumiBridge main command
+    usage: /durumi <reload|announce|verify>
+    permission: durumi.admin
+permissions:
+  durumi.admin:
+    description: Access to DurumiBridge admin commands
+    default: op
+  durumi.verify:
+    description: Access to account verification
+    default: true

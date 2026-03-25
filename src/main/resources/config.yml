@@ -1,0 +1,30 @@
+# DurumiBridge Configuration
+# Bridge between DurumiTown (두루미마을) and the community website
+
+# HTTP API Server Settings
+api:
+  port: 8080
+  # API key for admin endpoints (announcements management)
+  # CHANGE THIS to a secure random string!
+  api-key: "CHANGE-ME-TO-A-SECURE-KEY"
+
+# CORS Settings
+cors:
+  allowed-origins:
+    - "http://localhost:3000"
+    - "https://durumitown.kr"
+
+# Map Renderer Settings
+map:
+  # Render interval in minutes
+  render-interval: 60
+  # Render radius in chunks from spawn
+  render-radius: 50
+  # Worlds to render
+  worlds:
+    - "world"
+
+# Database Settings
+database:
+  # Path to SQLite database file (relative to plugin data folder)
+  path: "durumi.db"
