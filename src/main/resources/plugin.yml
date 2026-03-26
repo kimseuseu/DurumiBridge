@@ -1,9 +1,9 @@
 name: DurumiBridge
-version: '1.0.0'
+version: '1.6.5'
 main: com.durumi.bridge.DurumiBridge
 api-version: '1.21'
 description: Bridge plugin between DurumiTown Minecraft server and community website
-author: DurumiTown
+author: moo_gi
 website: https://durumitown.kr
 commands:
   durumi:

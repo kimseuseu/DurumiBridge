@@ -17,7 +17,7 @@ cors:
 # Map Renderer Settings
 map:
   # Render interval in minutes
-  render-interval: 60
+  render-interval: 180
   # Render radius in chunks from spawn
   render-radius: 50
   # Worlds to render
@@ -32,7 +32,7 @@ website:
 sync:
   enabled: true
   url: "https://durumi-town.vercel.app/api/sync"
-  secret: "durumi-sync-key-change-this"
+  secret: "durumiBabo"
   interval: 30  # seconds
 
 # Database Settings

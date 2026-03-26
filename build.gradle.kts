@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.durumi.bridge"
-version = "1.0.0"
+version = "1.6.5"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21
