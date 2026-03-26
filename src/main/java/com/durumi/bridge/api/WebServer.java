@@ -36,8 +36,7 @@ public class WebServer {
         // Register handlers wrapped with CORS
         server.createContext("/api/status", cors(new StatusHandler(plugin)));
         server.createContext("/api/players", cors(new PlayerHandler(plugin)));
-        server.createContext("/api/map/tiles", cors(new MapHandler(plugin)));
-        server.createContext("/api/announcements", cors(new AnnouncementHandler(plugin, apiKey)));
+server.createContext("/api/announcements", cors(new AnnouncementHandler(plugin, apiKey)));
         server.createContext("/api/board", cors(new BoardHandler(plugin)));
         server.createContext("/api/verify", cors(new VerifyHandler(plugin)));
 

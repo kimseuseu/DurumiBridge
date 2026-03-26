@@ -14,20 +14,6 @@ cors:
     - "http://localhost:3000"
     - "https://durumitown.kr"
 
-# Map Renderer Settings
-map:
-  # Render interval in minutes
-  render-interval: 180
-  # Render radius in chunks from spawn
-  render-radius: 50
-  # Worlds to render
-  worlds:
-    - "world"
-
-# Website Settings
-website:
-  url: "https://durumi-town.vercel.app"
-
 # Website Sync (Push-based)
 sync:
   enabled: true

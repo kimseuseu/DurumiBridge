@@ -3,8 +3,6 @@ package com.durumi.bridge;
 import com.durumi.bridge.api.WebServer;
 import com.durumi.bridge.command.DurumiCommand;
 import com.durumi.bridge.data.DatabaseManager;
-import com.durumi.bridge.map.MapRenderer;
-import com.durumi.bridge.map.MapTileUploader;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
@@ -23,10 +21,7 @@ public class DurumiBridge extends JavaPlugin {
     private static DurumiBridge instance;
     private WebServer webServer;
     private DatabaseManager databaseManager;
-    private MapRenderer mapRenderer;
-    private MapTileUploader mapTileUploader;
     private int syncTaskId = -1;
-    private int mapTaskId = -1;
 
     @Override
     public void onEnable() {
@@ -43,11 +38,6 @@ public class DurumiBridge extends JavaPlugin {
             return;
         }
         getLogger().info("Database initialized successfully.");
-
-        // Initialize map renderer and tile uploader
-        mapRenderer = new MapRenderer(this);
-        mapTileUploader = new MapTileUploader(this);
-        scheduleMapRendering();
 
         // Start web server
         int port = getConfig().getInt("api.port", 8080);
@@ -113,8 +103,7 @@ public class DurumiBridge extends JavaPlugin {
             getLogger().log(Level.SEVERE, "Failed to restart web server!", e);
         }
 
-        // Reschedule map rendering and sync
-        scheduleMapRendering();
+        // Restart sync
         startSyncTask();
 
         getLogger().info("DurumiBridge reloaded!");
@@ -193,42 +182,12 @@ public class DurumiBridge extends JavaPlugin {
         getLogger().info("[Sync] Website sync enabled: " + syncUrl + " (every " + getConfig().getInt("sync.interval", 30) + "s)");
     }
 
-    private void scheduleMapRendering() {
-        // Cancel existing map task only (not all tasks!)
-        if (mapTaskId != -1) {
-            Bukkit.getScheduler().cancelTask(mapTaskId);
-            mapTaskId = -1;
-        }
-
-        int intervalMinutes = getConfig().getInt("map.render-interval", 60);
-        long intervalTicks = intervalMinutes * 60L * 20L;
-
-        // Schedule periodic map rendering (async for the file I/O, but chunk access on main thread)
-        mapTaskId = Bukkit.getScheduler().runTaskTimer(this, () -> {
-            List<String> worlds = getConfig().getStringList("map.worlds");
-            int radius = getConfig().getInt("map.render-radius", 50);
-            for (String worldName : worlds) {
-                // After rendering completes, upload tiles to website
-                mapRenderer.renderWorld(worldName, radius, () -> {
-                    if (getConfig().getBoolean("sync.enabled", false)) {
-                        getLogger().info("[MapUpload] Map render finished, starting tile upload...");
-                        mapTileUploader.uploadTilesAsync();
-                    }
-                });
-            }
-        }, 100L, intervalTicks).getTaskId();
-    }
-
     public static DurumiBridge getInstance() {
         return instance;
     }
 
     public DatabaseManager getDatabaseManager() {
         return databaseManager;
-    }
-
-    public MapRenderer getMapRenderer() {
-        return mapRenderer;
     }
 
     public WebServer getWebServer() {
