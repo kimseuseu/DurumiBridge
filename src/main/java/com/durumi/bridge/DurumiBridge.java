@@ -4,6 +4,7 @@ import com.durumi.bridge.api.WebServer;
 import com.durumi.bridge.command.DurumiCommand;
 import com.durumi.bridge.data.DatabaseManager;
 import com.durumi.bridge.map.MapRenderer;
+import com.durumi.bridge.map.MapTileUploader;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
@@ -23,6 +24,7 @@ public class DurumiBridge extends JavaPlugin {
     private WebServer webServer;
     private DatabaseManager databaseManager;
     private MapRenderer mapRenderer;
+    private MapTileUploader mapTileUploader;
 
     @Override
     public void onEnable() {
@@ -40,8 +42,9 @@ public class DurumiBridge extends JavaPlugin {
         }
         getLogger().info("Database initialized successfully.");
 
-        // Initialize map renderer
+        // Initialize map renderer and tile uploader
         mapRenderer = new MapRenderer(this);
+        mapTileUploader = new MapTileUploader(this);
         scheduleMapRendering();
 
         // Start web server
@@ -189,7 +192,13 @@ public class DurumiBridge extends JavaPlugin {
             List<String> worlds = getConfig().getStringList("map.worlds");
             int radius = getConfig().getInt("map.render-radius", 50);
             for (String worldName : worlds) {
-                mapRenderer.renderWorld(worldName, radius);
+                // After rendering completes, upload tiles to website
+                mapRenderer.renderWorld(worldName, radius, () -> {
+                    if (getConfig().getBoolean("sync.enabled", false)) {
+                        getLogger().info("[MapUpload] Map render finished, starting tile upload...");
+                        mapTileUploader.uploadTilesAsync();
+                    }
+                });
             }
         }, 100L, intervalTicks); // Start 5 seconds after enable, then repeat
     }

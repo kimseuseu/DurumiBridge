@@ -12,7 +12,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
 /**
@@ -46,9 +46,18 @@ public class MapRenderer {
      * and the image writing on an async thread.
      */
     public void renderWorld(String worldName, int radiusChunks) {
+        renderWorld(worldName, radiusChunks, null);
+    }
+
+    /**
+     * Render all tiles for a world within the given radius (in chunks) from spawn.
+     * When all tiles are written, the onComplete callback is invoked (on an async thread).
+     */
+    public void renderWorld(String worldName, int radiusChunks, Runnable onComplete) {
         World world = Bukkit.getWorld(worldName);
         if (world == null) {
             plugin.getLogger().warning("Cannot render map for unknown world: " + worldName);
+            if (onComplete != null) onComplete.run();
             return;
         }
 
@@ -68,22 +77,29 @@ public class MapRenderer {
         int totalTiles = (2 * tilesPerSide + 1) * (2 * tilesPerSide + 1);
         plugin.getLogger().info("Rendering " + totalTiles + " tiles for world '" + worldName + "'...");
 
+        AtomicInteger remaining = new AtomicInteger(totalTiles);
+
         for (int tileX = centerTileX - tilesPerSide; tileX <= centerTileX + tilesPerSide; tileX++) {
             for (int tileZ = centerTileZ - tilesPerSide; tileZ <= centerTileZ + tilesPerSide; tileZ++) {
                 final int tx = tileX;
                 final int tz = tileZ;
-                renderTile(world, worldName, tx, tz);
+                renderTile(world, worldName, tx, tz, () -> {
+                    if (remaining.decrementAndGet() == 0) {
+                        plugin.getLogger().info("Map render complete for world '" + worldName + "'.");
+                        if (onComplete != null) {
+                            onComplete.run();
+                        }
+                    }
+                });
             }
         }
-
-        plugin.getLogger().info("Map render complete for world '" + worldName + "'.");
     }
 
     /**
      * Render a single 256x256 tile. Each pixel = 1 block.
      * Tile coordinates define which 256x256 block area to render.
      */
-    private void renderTile(World world, String worldName, int tileX, int tileZ) {
+    private void renderTile(World world, String worldName, int tileX, int tileZ, Runnable onTileDone) {
         // Calculate the block origin for this tile
         int blockStartX = tileX * TILE_SIZE;
         int blockStartZ = tileZ * TILE_SIZE;
@@ -118,6 +134,10 @@ public class MapRenderer {
                 } catch (IOException e) {
                     plugin.getLogger().log(Level.WARNING,
                             "Failed to write tile " + tileX + "/" + tileZ + " for world " + worldName, e);
+                } finally {
+                    if (onTileDone != null) {
+                        onTileDone.run();
+                    }
                 }
             });
         });
