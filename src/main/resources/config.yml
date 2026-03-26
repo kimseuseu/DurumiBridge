@@ -12,7 +12,7 @@ api:
 cors:
   allowed-origins:
     - "http://localhost:3000"
-    - "https://durumitown.kr"
+    - "https://durumi-town.vercel.app"
 
 # Website Sync (Push-based)
 sync:

@@ -69,4 +69,4 @@ MIT
 
 ## 제작
 
-moo_gi — [두루미마을](https://durumitown.kr)
+moo_gi — [두루미마을](https://durumi-town.vercel.app)

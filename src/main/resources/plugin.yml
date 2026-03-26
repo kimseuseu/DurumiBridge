@@ -4,7 +4,7 @@ main: com.durumi.bridge.DurumiBridge
 api-version: '1.21'
 description: Bridge plugin between DurumiTown Minecraft server and community website
 author: moo_gi
-website: https://durumitown.kr
+website: https://durumi-town.vercel.app
 commands:
   durumi:
     description: DurumiBridge main command
