@@ -25,6 +25,8 @@ public class DurumiBridge extends JavaPlugin {
     private DatabaseManager databaseManager;
     private MapRenderer mapRenderer;
     private MapTileUploader mapTileUploader;
+    private int syncTaskId = -1;
+    private int mapTaskId = -1;
 
     @Override
     public void onEnable() {
@@ -68,70 +70,7 @@ public class DurumiBridge extends JavaPlugin {
         getCommand("durumi").setTabCompleter(command);
 
         // Start website sync
-        if (getConfig().getBoolean("sync.enabled", false)) {
-            int interval = getConfig().getInt("sync.interval", 30) * 20; // ticks
-            String syncUrl = getConfig().getString("sync.url", "");
-            String syncSecret = getConfig().getString("sync.secret", "");
-
-            if (!syncUrl.isEmpty()) {
-                getServer().getScheduler().runTaskTimer(this, () -> {
-                    // Collect data on main thread
-                    JsonObject json = new JsonObject();
-                    json.addProperty("online", true);
-
-                    JsonObject players = new JsonObject();
-                    players.addProperty("online", Bukkit.getOnlinePlayers().size());
-                    players.addProperty("max", Bukkit.getMaxPlayers());
-
-                    JsonArray playerList = new JsonArray();
-                    for (Player p : Bukkit.getOnlinePlayers()) {
-                        JsonObject pj = new JsonObject();
-                        pj.addProperty("name", p.getName());
-                        pj.addProperty("uuid", p.getUniqueId().toString());
-                        pj.addProperty("world", p.getWorld().getName());
-                        pj.addProperty("x", Math.round(p.getLocation().getX()));
-                        pj.addProperty("y", Math.round(p.getLocation().getY()));
-                        pj.addProperty("z", Math.round(p.getLocation().getZ()));
-                        pj.addProperty("health", Math.round(p.getHealth()));
-                        playerList.add(pj);
-                    }
-                    players.add("list", playerList);
-                    json.add("players", players);
-
-                    json.addProperty("version", Bukkit.getMinecraftVersion());
-                    json.addProperty("motd", Bukkit.getMotd());
-                    json.addProperty("tps", Math.round(Bukkit.getTPS()[0] * 100.0) / 100.0);
-
-                    String jsonStr = json.toString();
-
-                    // Send async
-                    getServer().getScheduler().runTaskAsynchronously(this, () -> {
-                        try {
-                            URL url = new URL(syncUrl);
-                            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                            conn.setRequestMethod("POST");
-                            conn.setRequestProperty("Content-Type", "application/json");
-                            conn.setRequestProperty("Authorization", "Bearer " + syncSecret);
-                            conn.setDoOutput(true);
-                            conn.setConnectTimeout(5000);
-                            conn.setReadTimeout(5000);
-                            try (OutputStream os = conn.getOutputStream()) {
-                                os.write(jsonStr.getBytes(StandardCharsets.UTF_8));
-                            }
-                            int code = conn.getResponseCode();
-                            if (code != 200) {
-                                getLogger().warning("[Sync] HTTP " + code);
-                            }
-                            conn.disconnect();
-                        } catch (Exception e) {
-                            getLogger().warning("[Sync] Failed: " + e.getMessage());
-                        }
-                    });
-                }, 100L, (long) interval); // Start after 5 seconds, repeat every interval
-
-                getLogger().info("[Sync] Website sync enabled: " + syncUrl + " (every " + getConfig().getInt("sync.interval", 30) + "s)");
-            }
-        }
+        startSyncTask();
 
         getLogger().info("DurumiBridge enabled! 두루미마을 브릿지가 활성화되었습니다.");
     }
@@ -174,21 +113,98 @@ public class DurumiBridge extends JavaPlugin {
             getLogger().log(Level.SEVERE, "Failed to restart web server!", e);
         }
 
-        // Reschedule map rendering
+        // Reschedule map rendering and sync
         scheduleMapRendering();
+        startSyncTask();
 
         getLogger().info("DurumiBridge reloaded!");
     }
 
+    private void startSyncTask() {
+        // Cancel existing sync task if running
+        if (syncTaskId != -1) {
+            Bukkit.getScheduler().cancelTask(syncTaskId);
+            syncTaskId = -1;
+        }
+
+        if (!getConfig().getBoolean("sync.enabled", false)) return;
+
+        int interval = getConfig().getInt("sync.interval", 30) * 20; // ticks
+        String syncUrl = getConfig().getString("sync.url", "");
+        String syncSecret = getConfig().getString("sync.secret", "");
+
+        if (syncUrl.isEmpty()) return;
+
+        syncTaskId = getServer().getScheduler().runTaskTimer(this, () -> {
+            // Collect data on main thread
+            JsonObject json = new JsonObject();
+            json.addProperty("online", true);
+
+            JsonObject players = new JsonObject();
+            players.addProperty("online", Bukkit.getOnlinePlayers().size());
+            players.addProperty("max", Bukkit.getMaxPlayers());
+
+            JsonArray playerList = new JsonArray();
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                JsonObject pj = new JsonObject();
+                pj.addProperty("name", p.getName());
+                pj.addProperty("uuid", p.getUniqueId().toString());
+                pj.addProperty("world", p.getWorld().getName());
+                pj.addProperty("x", Math.round(p.getLocation().getX()));
+                pj.addProperty("y", Math.round(p.getLocation().getY()));
+                pj.addProperty("z", Math.round(p.getLocation().getZ()));
+                pj.addProperty("health", Math.round(p.getHealth()));
+                playerList.add(pj);
+            }
+            players.add("list", playerList);
+            json.add("players", players);
+
+            json.addProperty("version", Bukkit.getMinecraftVersion());
+            json.addProperty("motd", Bukkit.getMotd());
+            json.addProperty("tps", Math.round(Bukkit.getTPS()[0] * 100.0) / 100.0);
+
+            String jsonStr = json.toString();
+
+            // Send async
+            getServer().getScheduler().runTaskAsynchronously(this, () -> {
+                try {
+                    URL url = new URL(syncUrl);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json");
+                    conn.setRequestProperty("Authorization", "Bearer " + syncSecret);
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(5000);
+                    conn.setReadTimeout(5000);
+                    try (OutputStream os = conn.getOutputStream()) {
+                        os.write(jsonStr.getBytes(StandardCharsets.UTF_8));
+                    }
+                    int code = conn.getResponseCode();
+                    if (code != 200) {
+                        getLogger().warning("[Sync] HTTP " + code);
+                    }
+                    conn.disconnect();
+                } catch (Exception e) {
+                    getLogger().warning("[Sync] Failed: " + e.getMessage());
+                }
+            });
+        }, 100L, (long) interval).getTaskId();
+
+        getLogger().info("[Sync] Website sync enabled: " + syncUrl + " (every " + getConfig().getInt("sync.interval", 30) + "s)");
+    }
+
     private void scheduleMapRendering() {
+        // Cancel existing map task only (not all tasks!)
+        if (mapTaskId != -1) {
+            Bukkit.getScheduler().cancelTask(mapTaskId);
+            mapTaskId = -1;
+        }
+
         int intervalMinutes = getConfig().getInt("map.render-interval", 60);
         long intervalTicks = intervalMinutes * 60L * 20L;
 
-        // Cancel existing tasks
-        Bukkit.getScheduler().cancelTasks(this);
-
         // Schedule periodic map rendering (async for the file I/O, but chunk access on main thread)
-        Bukkit.getScheduler().runTaskTimer(this, () -> {
+        mapTaskId = Bukkit.getScheduler().runTaskTimer(this, () -> {
             List<String> worlds = getConfig().getStringList("map.worlds");
             int radius = getConfig().getInt("map.render-radius", 50);
             for (String worldName : worlds) {
@@ -200,7 +216,7 @@ public class DurumiBridge extends JavaPlugin {
                     }
                 });
             }
-        }, 100L, intervalTicks); // Start 5 seconds after enable, then repeat
+        }, 100L, intervalTicks).getTaskId();
     }
 
     public static DurumiBridge getInstance() {
