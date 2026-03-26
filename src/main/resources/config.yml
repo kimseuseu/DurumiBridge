@@ -24,6 +24,10 @@ map:
   worlds:
     - "world"
 
+# Website Settings
+website:
+  url: "https://durumi-town.vercel.app"
+
 # Database Settings
 database:
   # Path to SQLite database file (relative to plugin data folder)

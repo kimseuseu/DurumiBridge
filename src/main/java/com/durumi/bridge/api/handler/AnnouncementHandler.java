@@ -41,10 +41,32 @@ public class AnnouncementHandler implements HttpHandler {
     }
 
     private void handleGet(HttpExchange exchange) throws IOException {
-        List<Map<String, Object>> announcements = plugin.getDatabaseManager().getAnnouncements();
+        String query = exchange.getRequestURI().getQuery();
+        int page = 1;
+        int limit = 10;
+
+        if (query != null) {
+            for (String param : query.split("&")) {
+                String[] kv = param.split("=", 2);
+                if (kv.length == 2) {
+                    try {
+                        if ("page".equals(kv[0])) page = Math.max(1, Integer.parseInt(kv[1]));
+                        else if ("limit".equals(kv[0])) limit = Math.max(1, Math.min(100, Integer.parseInt(kv[1])));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+
+        int total = plugin.getDatabaseManager().getAnnouncementCount();
+        int totalPages = (int) Math.ceil((double) total / limit);
+        List<Map<String, Object>> announcements = plugin.getDatabaseManager().getPaginatedAnnouncements(page, limit);
+
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("count", announcements.size());
-        response.put("announcements", announcements);
+        response.put("data", announcements);
+        response.put("page", page);
+        response.put("totalPages", totalPages);
+        response.put("total", total);
         JsonUtil.sendJson(exchange, 200, response);
     }
 
@@ -55,26 +77,32 @@ public class AnnouncementHandler implements HttpHandler {
         }
 
         JsonObject body = JsonUtil.parseBody(exchange);
-        if (body == null || !body.has("message")) {
-            JsonUtil.sendError(exchange, 400, "Missing required field: message");
+        if (body == null || !body.has("title") || !body.has("content")) {
+            JsonUtil.sendError(exchange, 400, "Missing required fields: title, content");
             return;
         }
 
-        String message = body.get("message").getAsString();
+        String title = body.get("title").getAsString();
+        String content = body.get("content").getAsString();
         String author = body.has("author") ? body.get("author").getAsString() : "System";
+        String category = body.has("category") ? body.get("category").getAsString() : "일반";
+        boolean pinned = body.has("pinned") && body.get("pinned").getAsBoolean();
 
-        if (message.isBlank()) {
-            JsonUtil.sendError(exchange, 400, "Message cannot be empty");
+        if (title.isBlank() || content.isBlank()) {
+            JsonUtil.sendError(exchange, 400, "Title and content cannot be empty");
             return;
         }
 
-        int id = plugin.getDatabaseManager().createAnnouncement(message, author);
+        int id = plugin.getDatabaseManager().createAnnouncement(title, content, author, category, pinned);
         if (id > 0) {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("success", true);
             response.put("id", id);
-            response.put("message", message);
+            response.put("title", title);
+            response.put("content", content);
             response.put("author", author);
+            response.put("category", category);
+            response.put("pinned", pinned);
             JsonUtil.sendJson(exchange, 201, response);
         } else {
             JsonUtil.sendError(exchange, 500, "Failed to create announcement");

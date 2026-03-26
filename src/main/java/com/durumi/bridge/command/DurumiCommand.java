@@ -66,14 +66,32 @@ public class DurumiCommand implements CommandExecutor, TabCompleter {
 
         if (args.length < 2) {
             sender.sendMessage(Component.text("[DurumiBridge] ", NamedTextColor.GOLD)
-                    .append(Component.text("사용법: /durumi announce <메시지>", NamedTextColor.YELLOW)));
+                    .append(Component.text("사용법: /durumi announce <제목> | <내용>", NamedTextColor.YELLOW)));
             return;
         }
 
-        String message = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+        String fullText = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+        String title;
+        String content;
+
+        int separatorIndex = fullText.indexOf('|');
+        if (separatorIndex >= 0) {
+            title = fullText.substring(0, separatorIndex).trim();
+            content = fullText.substring(separatorIndex + 1).trim();
+        } else {
+            title = fullText;
+            content = fullText;
+        }
+
+        if (title.isEmpty() || content.isEmpty()) {
+            sender.sendMessage(Component.text("[DurumiBridge] ", NamedTextColor.GOLD)
+                    .append(Component.text("제목과 내용을 모두 입력해주세요.", NamedTextColor.RED)));
+            return;
+        }
+
         String author = sender.getName();
 
-        int id = plugin.getDatabaseManager().createAnnouncement(message, author);
+        int id = plugin.getDatabaseManager().createAnnouncement(title, content, author, "일반", false);
         if (id > 0) {
             sender.sendMessage(Component.text("[DurumiBridge] ", NamedTextColor.GOLD)
                     .append(Component.text("공지사항이 등록되었습니다! (ID: " + id + ")", NamedTextColor.GREEN)));
@@ -133,7 +151,7 @@ public class DurumiCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Component.empty());
         sender.sendMessage(Component.text("  /durumi reload", NamedTextColor.AQUA)
                 .append(Component.text(" - 설정 리로드", NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("  /durumi announce <메시지>", NamedTextColor.AQUA)
+        sender.sendMessage(Component.text("  /durumi announce <제목> | <내용>", NamedTextColor.AQUA)
                 .append(Component.text(" - 공지사항 등록", NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("  /durumi verify", NamedTextColor.AQUA)
                 .append(Component.text(" - 계정 인증 코드 생성", NamedTextColor.GRAY)));

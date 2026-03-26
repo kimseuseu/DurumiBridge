@@ -52,8 +52,11 @@ public class DatabaseManager {
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS announcements (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    message TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
                     author TEXT NOT NULL,
+                    category TEXT DEFAULT '일반',
+                    pinned INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """);
@@ -65,6 +68,8 @@ public class DatabaseManager {
                     content TEXT NOT NULL,
                     author TEXT NOT NULL,
                     author_uuid TEXT,
+                    category TEXT DEFAULT '자유',
+                    views INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -118,15 +123,18 @@ public class DatabaseManager {
 
     public synchronized List<Map<String, Object>> getAnnouncements() {
         List<Map<String, Object>> list = new ArrayList<>();
-        String sql = "SELECT id, message, author, created_at FROM announcements ORDER BY created_at DESC";
+        String sql = "SELECT id, title, content, author, category, pinned, created_at FROM announcements ORDER BY pinned DESC, created_at DESC";
         try (PreparedStatement ps = connection.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 Map<String, Object> row = new HashMap<>();
                 row.put("id", rs.getInt("id"));
-                row.put("message", rs.getString("message"));
+                row.put("title", rs.getString("title"));
+                row.put("content", rs.getString("content"));
                 row.put("author", rs.getString("author"));
-                row.put("created_at", rs.getString("created_at"));
+                row.put("category", rs.getString("category"));
+                row.put("pinned", rs.getInt("pinned") == 1);
+                row.put("createdAt", rs.getString("created_at"));
                 list.add(row);
             }
         } catch (SQLException e) {
@@ -135,11 +143,53 @@ public class DatabaseManager {
         return list;
     }
 
-    public synchronized int createAnnouncement(String message, String author) {
-        String sql = "INSERT INTO announcements (message, author) VALUES (?, ?)";
+    public synchronized List<Map<String, Object>> getPaginatedAnnouncements(int page, int limit) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        int offset = (page - 1) * limit;
+        String sql = "SELECT id, title, content, author, category, pinned, created_at FROM announcements ORDER BY pinned DESC, created_at DESC LIMIT ? OFFSET ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, limit);
+            ps.setInt(2, offset);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> row = new HashMap<>();
+                    row.put("id", rs.getInt("id"));
+                    row.put("title", rs.getString("title"));
+                    row.put("content", rs.getString("content"));
+                    row.put("author", rs.getString("author"));
+                    row.put("category", rs.getString("category"));
+                    row.put("pinned", rs.getInt("pinned") == 1);
+                    row.put("createdAt", rs.getString("created_at"));
+                    list.add(row);
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error fetching paginated announcements", e);
+        }
+        return list;
+    }
+
+    public synchronized int getAnnouncementCount() {
+        String sql = "SELECT COUNT(*) FROM announcements";
+        try (PreparedStatement ps = connection.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error counting announcements", e);
+        }
+        return 0;
+    }
+
+    public synchronized int createAnnouncement(String title, String content, String author, String category, boolean pinned) {
+        String sql = "INSERT INTO announcements (title, content, author, category, pinned) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, message);
-            ps.setString(2, author);
+            ps.setString(1, title);
+            ps.setString(2, content);
+            ps.setString(3, author);
+            ps.setString(4, category);
+            ps.setInt(5, pinned ? 1 : 0);
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
@@ -167,7 +217,9 @@ public class DatabaseManager {
 
     public synchronized List<Map<String, Object>> getBoardPosts() {
         List<Map<String, Object>> list = new ArrayList<>();
-        String sql = "SELECT id, title, content, author, author_uuid, created_at, updated_at FROM board_posts ORDER BY created_at DESC";
+        String sql = "SELECT p.id, p.title, p.content, p.author, p.author_uuid, p.category, p.views, p.created_at, p.updated_at, " +
+                "(SELECT COUNT(*) FROM board_comments c WHERE c.post_id = p.id) AS comment_count " +
+                "FROM board_posts p ORDER BY p.created_at DESC";
         try (PreparedStatement ps = connection.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -177,8 +229,11 @@ public class DatabaseManager {
                 row.put("content", rs.getString("content"));
                 row.put("author", rs.getString("author"));
                 row.put("author_uuid", rs.getString("author_uuid"));
-                row.put("created_at", rs.getString("created_at"));
-                row.put("updated_at", rs.getString("updated_at"));
+                row.put("category", rs.getString("category"));
+                row.put("views", rs.getInt("views"));
+                row.put("comments", rs.getInt("comment_count"));
+                row.put("createdAt", rs.getString("created_at"));
+                row.put("updatedAt", rs.getString("updated_at"));
                 list.add(row);
             }
         } catch (SQLException e) {
@@ -187,8 +242,82 @@ public class DatabaseManager {
         return list;
     }
 
+    public synchronized List<Map<String, Object>> getPaginatedBoardPosts(int page, int limit, String category) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        int offset = (page - 1) * limit;
+        String sql;
+        if (category != null && !category.isBlank()) {
+            sql = "SELECT p.id, p.title, p.content, p.author, p.author_uuid, p.category, p.views, p.created_at, p.updated_at, " +
+                    "(SELECT COUNT(*) FROM board_comments c WHERE c.post_id = p.id) AS comment_count " +
+                    "FROM board_posts p WHERE p.category = ? ORDER BY p.created_at DESC LIMIT ? OFFSET ?";
+        } else {
+            sql = "SELECT p.id, p.title, p.content, p.author, p.author_uuid, p.category, p.views, p.created_at, p.updated_at, " +
+                    "(SELECT COUNT(*) FROM board_comments c WHERE c.post_id = p.id) AS comment_count " +
+                    "FROM board_posts p ORDER BY p.created_at DESC LIMIT ? OFFSET ?";
+        }
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            int paramIndex = 1;
+            if (category != null && !category.isBlank()) {
+                ps.setString(paramIndex++, category);
+            }
+            ps.setInt(paramIndex++, limit);
+            ps.setInt(paramIndex, offset);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> row = new HashMap<>();
+                    row.put("id", rs.getInt("id"));
+                    row.put("title", rs.getString("title"));
+                    row.put("content", rs.getString("content"));
+                    row.put("author", rs.getString("author"));
+                    row.put("author_uuid", rs.getString("author_uuid"));
+                    row.put("category", rs.getString("category"));
+                    row.put("views", rs.getInt("views"));
+                    row.put("comments", rs.getInt("comment_count"));
+                    row.put("createdAt", rs.getString("created_at"));
+                    row.put("updatedAt", rs.getString("updated_at"));
+                    list.add(row);
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error fetching paginated board posts", e);
+        }
+        return list;
+    }
+
+    public synchronized int getBoardPostCount(String category) {
+        String sql;
+        if (category != null && !category.isBlank()) {
+            sql = "SELECT COUNT(*) FROM board_posts WHERE category = ?";
+        } else {
+            sql = "SELECT COUNT(*) FROM board_posts";
+        }
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            if (category != null && !category.isBlank()) {
+                ps.setString(1, category);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error counting board posts", e);
+        }
+        return 0;
+    }
+
+    public synchronized void incrementPostViews(int id) {
+        String sql = "UPDATE board_posts SET views = views + 1 WHERE id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error incrementing views for post id=" + id, e);
+        }
+    }
+
     public synchronized Map<String, Object> getBoardPost(int id) {
-        String sql = "SELECT id, title, content, author, author_uuid, created_at, updated_at FROM board_posts WHERE id = ?";
+        String sql = "SELECT id, title, content, author, author_uuid, category, views, created_at, updated_at FROM board_posts WHERE id = ?";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
@@ -199,8 +328,10 @@ public class DatabaseManager {
                     row.put("content", rs.getString("content"));
                     row.put("author", rs.getString("author"));
                     row.put("author_uuid", rs.getString("author_uuid"));
-                    row.put("created_at", rs.getString("created_at"));
-                    row.put("updated_at", rs.getString("updated_at"));
+                    row.put("category", rs.getString("category"));
+                    row.put("views", rs.getInt("views"));
+                    row.put("createdAt", rs.getString("created_at"));
+                    row.put("updatedAt", rs.getString("updated_at"));
                     return row;
                 }
             }
@@ -210,13 +341,14 @@ public class DatabaseManager {
         return null;
     }
 
-    public synchronized int createBoardPost(String title, String content, String author, String authorUuid) {
-        String sql = "INSERT INTO board_posts (title, content, author, author_uuid) VALUES (?, ?, ?, ?)";
+    public synchronized int createBoardPost(String title, String content, String author, String authorUuid, String category) {
+        String sql = "INSERT INTO board_posts (title, content, author, author_uuid, category) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, title);
             ps.setString(2, content);
             ps.setString(3, author);
             ps.setString(4, authorUuid);
+            ps.setString(5, category);
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {

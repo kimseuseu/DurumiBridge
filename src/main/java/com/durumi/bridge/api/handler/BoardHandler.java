@@ -43,12 +43,38 @@ public class BoardHandler implements HttpHandler {
     private void handleGet(HttpExchange exchange, String path) throws IOException {
         String prefix = "/api/board";
 
-        // GET /api/board - list all posts
+        // GET /api/board - list posts with pagination
         if (path.equals(prefix) || path.equals(prefix + "/")) {
-            List<Map<String, Object>> posts = plugin.getDatabaseManager().getBoardPosts();
+            String query = exchange.getRequestURI().getQuery();
+            int page = 1;
+            int limit = 15;
+            String category = null;
+
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    String[] kv = param.split("=", 2);
+                    if (kv.length == 2) {
+                        try {
+                            switch (kv[0]) {
+                                case "page" -> page = Math.max(1, Integer.parseInt(kv[1]));
+                                case "limit" -> limit = Math.max(1, Math.min(100, Integer.parseInt(kv[1])));
+                                case "category" -> category = java.net.URLDecoder.decode(kv[1], java.nio.charset.StandardCharsets.UTF_8);
+                            }
+                        } catch (NumberFormatException ignored) {
+                        }
+                    }
+                }
+            }
+
+            int total = plugin.getDatabaseManager().getBoardPostCount(category);
+            int totalPages = (int) Math.ceil((double) total / limit);
+            List<Map<String, Object>> posts = plugin.getDatabaseManager().getPaginatedBoardPosts(page, limit, category);
+
             Map<String, Object> response = new LinkedHashMap<>();
-            response.put("count", posts.size());
-            response.put("posts", posts);
+            response.put("data", posts);
+            response.put("page", page);
+            response.put("totalPages", totalPages);
+            response.put("total", total);
             JsonUtil.sendJson(exchange, 200, response);
             return;
         }
@@ -73,6 +99,10 @@ public class BoardHandler implements HttpHandler {
             JsonUtil.sendError(exchange, 404, "Post not found");
             return;
         }
+
+        // Increment view count
+        plugin.getDatabaseManager().incrementPostViews(id);
+        post.put("views", (int) post.get("views") + 1);
 
         List<Map<String, Object>> comments = plugin.getDatabaseManager().getComments(id);
         post.put("comments", comments);
@@ -137,14 +167,16 @@ public class BoardHandler implements HttpHandler {
 
         String author = (String) verifiedUser.get("username");
         String authorUuid = (String) verifiedUser.get("uuid");
+        String category = body.has("category") ? body.get("category").getAsString() : "자유";
 
-        int id = plugin.getDatabaseManager().createBoardPost(title, content, author, authorUuid);
+        int id = plugin.getDatabaseManager().createBoardPost(title, content, author, authorUuid, category);
         if (id > 0) {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("success", true);
             response.put("id", id);
             response.put("title", title);
             response.put("author", author);
+            response.put("category", category);
             JsonUtil.sendJson(exchange, 201, response);
         } else {
             JsonUtil.sendError(exchange, 500, "Failed to create post");
