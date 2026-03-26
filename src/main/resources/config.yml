@@ -28,6 +28,13 @@ map:
 website:
   url: "https://durumi-town.vercel.app"
 
+# Website Sync (Push-based)
+sync:
+  enabled: true
+  url: "https://durumi-town.vercel.app/api/sync"
+  secret: "durumi-sync-key-change-this"
+  interval: 30  # seconds
+
 # Database Settings
 database:
   # Path to SQLite database file (relative to plugin data folder)
